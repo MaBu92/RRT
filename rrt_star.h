@@ -7,7 +7,7 @@
 
 #include "rrt.h"
 
-const double kNeighborhoodRadius = 0.5;
+const double kNeighborhoodRadius = 1.;
 
 
 // =====================================================================================================================
@@ -17,47 +17,137 @@ template <typename Config>
 class RRT_Star: public RRT<Config> {
 public:
     using RRT<Config>::RRT;
-    void run(int=1);
+
+    void run(int= 1);
+
 private:
-    void getNeighborhood(Config &input_config, std::vector<Node<Config>*> &neighborhood);
-    void extendAndRewire(Config &input_config, std::vector<Node<Config>*> &neighborhood);
+    void getNeighborhood(Config &input_config, std::vector<Node<Config> *> &neighborhood);
 
+    void extendAndRewire(Config &input_config, std::vector<Node<Config> *> &neighborhood);
 
-    };
+    void extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Config &input_config);
 
+    void propagateCostToChildren(Node<Config> &node, double new_cost);
+
+    void rewire(std::vector<Node<Config>*> &neighborhood);
+};
 
 // =====================================================================================================================
 //    RRT* TEMPLATE CLASS - DEFINITIONS
 // =====================================================================================================================
 template <typename Config>
 void RRT_Star<Config>::run(int n_iterations) {
-    Config sampled_config, intermediate_config;
+    Config sampled_config, new_config;
     std::vector<Node<Config>*> neighborhood;
 
     this->nodes.reserve(n_iterations + 1);
-    this->nodes.emplace_back(this->start);
+    this->nodes.emplace_back(this->start_config);
 
     for (int i=0; i<n_iterations; i++) {
-        this->sampleConfig(sampled_config);
-        Node<Config> &nearest_node = this->getNearestNode(sampled_config);
-        this->getIntermediateConfig(nearest_node.config, sampled_config, intermediate_config);
+        neighborhood = {};
 
-        getNeighborhood(intermediate_config, neighborhood);
-        extendAndRewire(intermediate_config, neighborhood);
-        //extendNode(*neighborhood[0]), intermediate_config);
-        //this->extendNode(nearest_node, intermediate_config);
+        //std::cout << "Iteration: " << i << std::endl;
+        // sample random configuration or goal_config node
+        this->sampleConfig(sampled_config);
+
+        // get a reference of the nearest node in nodes in regard to the sampled config
+        Node<Config> &nearest_node = this->getNearestNode(sampled_config);
+
+        //todo: make steering function
+        this->getIntermediateConfig(nearest_node.config, sampled_config, new_config);
+
+        //todo: check if intermediate config is not in collision space
+
+        // get vector of pointers to the nearest neighbor nodes
+        getNeighborhood(new_config, neighborhood);
+        assert(!neighborhood.empty());
+        if (i==999999) {
+            std::cout << "New Config: " << new_config.transpose() << std::endl;
+            for (Node<Config> *node: neighborhood) {
+                node->printConfig();
+                std::cout << "-->" << this->steer(new_config, node->config) << std::endl;
+            }
+        }
+
+        // todo: calculate cost of connection from neighbors to new config
+        //      make new node and emplace back to nodes
+        //      make cheapest neighbor to parent of new node
+        //      pushback new node to neighbor children
+        //      set cost of new node
+        extendFromCheapestNeighbor(neighborhood, new_config);
+
+
+        // todo: rewire
+        //      calculate cost of connection from new node to neighbor
+        //      if new node cost + cost of connection < neighbor cost
+        //          neighparent = neighbor parent
+        //          set neighbor parent = new_node
+        //          update neighbor cost
+        //          add cost_difference to children (and propagate diff to their children)
+        //          if neighbor + cost of connection to old parent < parent cost: do it again
+        rewire(neighborhood);
     }
 }
 
 
 template <typename Config>
 void RRT_Star<Config>::getNeighborhood(Config &input_config, std::vector<Node<Config>*> &neighborhood) {
-    double distance, min_distance=std::numeric_limits<double>::max();
+    double distance=0;
 
     for (Node<Config> &node: this->nodes) {
-        distance = this->normalizedSquaredDistance(input_config, node.config);
+        distance = this->distanceFunction(input_config, node.config);
         if (distance > kNeighborhoodRadius) continue;
         neighborhood.push_back(&node);
+    }
+}
+
+
+template <typename Config>
+void RRT_Star<Config>::extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Config &input_config) {
+    double min_cost = std::numeric_limits<double>::max();
+    double cost = 0;
+    Node<Config> *cheapest_neighbor = nullptr;
+
+    for (Node<Config> *neighbor: neighborhood) {
+        cost = this->steer(neighbor->config, input_config);
+        if (cost < min_cost) {
+            min_cost = cost;
+            cheapest_neighbor = neighbor;
+        }
+    }
+
+    this->nodes.emplace_back(input_config);
+    Node<Config> &new_node = this->nodes.back();
+
+    new_node.parent = cheapest_neighbor;
+    cheapest_neighbor->children.push_back(&new_node);
+    new_node.cost = cheapest_neighbor->cost + min_cost;
+}
+
+
+template <typename Config>
+void RRT_Star<Config>::rewire(std::vector<Node<Config>*> &neighborhood) {
+    double cost = 0, cost_diff = 0;
+    Node<Config> &new_node = this->nodes.back();
+
+    for (Node<Config> *neighbor: neighborhood) {
+        cost = this->steer(new_node.config, neighbor->config);
+
+        if (new_node.cost + cost < neighbor->cost) {
+            new_node.children.push_back(neighbor);
+            neighbor->parent = &new_node;
+            cost_diff = neighbor->cost - (new_node.cost + cost);
+            propagateCostToChildren(*neighbor, cost_diff);
+        }
+    }
+}
+
+
+template <typename Config>
+void RRT_Star<Config>::propagateCostToChildren(Node<Config> &node, double cost_diff) {
+    for (Node<Config> *child: node.children) {
+        child->cost += cost_diff;
+        propagateCostToChildren(*child, cost_diff);
     }
 }
 

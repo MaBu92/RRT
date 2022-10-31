@@ -3,4 +3,4 @@ project(src)
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_executable(src rrt.cpp)
+add_executable(src main.cpp rrt.h rrt_star.h)

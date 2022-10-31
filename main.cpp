@@ -4,7 +4,7 @@
 #include <chrono>
 
 #include "rrt.h"
-#include "rrt_star.h"
+//#include "rrt_star.h"
 
 const ConfigXY kStart(2, 2);
 const ConfigXY kGoal(18, 18);
@@ -39,14 +39,19 @@ int main() {
 
     const ConfigSpace<ConfigXY> config_space(kMin, kMax);
     RRT<ConfigXY> rrt(kStart, kGoal, config_space);
-    rrt.run(10);
 
-    const ConfigSpace<ConfigXYYaw> config_space2(kMin2, kMax2);
-    RRT<ConfigXYYaw> rrt2(kStart2, kGoal2, config_space2);
-    rrt2.run(10);
+//    RRT<ConfigXY> rrt(kStart, kGoal, config_space);
+//    rrt.run(1);
+//
+//    const ConfigSpace<ConfigXYYaw> config_space2(kMin2, kMax2);
+//    RRT<ConfigXYYaw> rrt2(kStart2, kGoal2, config_space2);
+//    rrt2.run(10);
+//
+//
+//    RRT_Star<ConfigXYYaw> rrt3(kStart2, kGoal2, config_space2);
+//    rrt3.run(1000);
+//    return 0;
 
 
-    RRT_Star<ConfigXYYaw> rrt3(kStart2, kGoal2, config_space2);
-    rrt3.run(10);
-    return 0;
+
 }

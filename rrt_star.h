@@ -18,63 +18,55 @@ class RRT_Star: public RRT<Config> {
 public:
     using RRT<Config>::RRT;
 
-    void run(int= 1);
+    std::vector<Node<Config>> run(int=1);
 
 private:
-    void getNeighborhood(Config &input_config, std::vector<Node<Config> *> &neighborhood);
+    void getNeighborhood(Node<Config> &input_node, std::vector<Node<Config> *> &neighborhood);
 
     void extendAndRewire(Config &input_config, std::vector<Node<Config> *> &neighborhood);
 
-    void extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Config &input_config);
+    void extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Node<Config> &input_node);
 
     void propagateCostToChildren(Node<Config> &node, double new_cost);
 
-    void rewire(std::vector<Node<Config>*> &neighborhood);
+    void rewire(Node<Config> &new_node, std::vector<Node<Config>*> &neighborhood);
 };
 
 // =====================================================================================================================
 //    RRT* TEMPLATE CLASS - DEFINITIONS
 // =====================================================================================================================
 template <typename Config>
-void RRT_Star<Config>::run(int n_iterations) {
-    Config sampled_config, new_config;
-    std::vector<Node<Config>*> neighborhood;
-
+std::vector<Node<Config>> RRT_Star<Config>::run(int n_iterations) {
+    // reserve memory for the tree nodes saved in nodes and add start as first node
     this->nodes.reserve(n_iterations + 1);
-    this->nodes.emplace_back(this->start_config);
+    this->nodes.push_back(this->start_node);
+    this->nodes.push_back(this->goal_node);
+    std::vector<Node<Config>*> neighborhood;
 
     for (int i=0; i<n_iterations; i++) {
         neighborhood = {};
 
         //std::cout << "Iteration: " << i << std::endl;
         // sample random configuration or goal_config node
-        this->sampleConfig(sampled_config);
+        Node<Config> sample_node = this->sampleNode();
 
         // get a reference of the nearest node in nodes in regard to the sampled config
-        Node<Config> &nearest_node = this->getNearestNode(sampled_config);
+        Node<Config> &nearest_node = this->getNearestNode(sample_node);
 
-        //todo: make steering function
-        this->getIntermediateConfig(nearest_node.config, sampled_config, new_config);
+        // extend nearest_node towards sample node with a limiting step size -> new_node
+        // calculate path and cost of extension for new_node
+        // save new_node in nodes. update parent and children of new_node and nearest_node
+        auto [path, cost] = this->steer(nearest_node, sample_node, kExtensionStepSize, false);
+        Node<Config> new_node(path.back());
 
-        //todo: check if intermediate config is not in collision space
+        if (this->getDistance(new_node, this->goal_node) <= kExtensionStepSize) continue;
 
         // get vector of pointers to the nearest neighbor nodes
-        getNeighborhood(new_config, neighborhood);
+        std::vector<Node<Config>*> neighborhood;
+        getNeighborhood(new_node, neighborhood);
         assert(!neighborhood.empty());
-        if (i==999999) {
-            std::cout << "New Config: " << new_config.transpose() << std::endl;
-            for (Node<Config> *node: neighborhood) {
-                node->printConfig();
-                std::cout << "-->" << this->steer(new_config, node->config) << std::endl;
-            }
-        }
 
-        // todo: calculate cost of connection from neighbors to new config
-        //      make new node and emplace back to nodes
-        //      make cheapest neighbor to parent of new node
-        //      pushback new node to neighbor children
-        //      set cost of new node
-        extendFromCheapestNeighbor(neighborhood, new_config);
+        extendFromCheapestNeighbor(neighborhood, new_node);
 
 
         // todo: rewire
@@ -85,17 +77,18 @@ void RRT_Star<Config>::run(int n_iterations) {
         //          update neighbor cost
         //          add cost_difference to children (and propagate diff to their children)
         //          if neighbor + cost of connection to old parent < parent cost: do it again
-        rewire(neighborhood);
+        rewire(this->nodes.back(), neighborhood);
     }
+    return this->getFinalPath(this->nodes[1]);
 }
 
 
 template <typename Config>
-void RRT_Star<Config>::getNeighborhood(Config &input_config, std::vector<Node<Config>*> &neighborhood) {
+void RRT_Star<Config>::getNeighborhood(Node<Config> &input_node, std::vector<Node<Config>*> &neighborhood) {
     double distance=0;
 
     for (Node<Config> &node: this->nodes) {
-        distance = this->distanceFunction(input_config, node.config);
+        distance = this->getDistance(input_node, node);
         if (distance > kNeighborhoodRadius) continue;
         neighborhood.push_back(&node);
     }
@@ -103,39 +96,37 @@ void RRT_Star<Config>::getNeighborhood(Config &input_config, std::vector<Node<Co
 
 
 template <typename Config>
-void RRT_Star<Config>::extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Config &input_config) {
-    double min_cost = std::numeric_limits<double>::max();
-    double cost = 0;
+void RRT_Star<Config>::extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Node<Config> &input_node) {
+    double min_cost = kDoubleMax;
     Node<Config> *cheapest_neighbor = nullptr;
 
     for (Node<Config> *neighbor: neighborhood) {
-        cost = this->steer(neighbor->config, input_config);
+        auto [path, cost] = this->steer(*neighbor, input_node, kDoubleMax, false);
         if (cost < min_cost) {
             min_cost = cost;
             cheapest_neighbor = neighbor;
         }
     }
 
-    this->nodes.emplace_back(input_config);
-    Node<Config> &new_node = this->nodes.back();
-
-    new_node.parent = cheapest_neighbor;
-    cheapest_neighbor->children.push_back(&new_node);
-    new_node.cost = cheapest_neighbor->cost + min_cost;
+    auto [path, cost] = this->steer(*cheapest_neighbor, input_node);
+    input_node.parent = cheapest_neighbor;
+    input_node.cost = cheapest_neighbor->cost + min_cost;
+    input_node.path = path;
+    cheapest_neighbor->children.push_back(&input_node);
 }
 
 
 template <typename Config>
-void RRT_Star<Config>::rewire(std::vector<Node<Config>*> &neighborhood) {
+void RRT_Star<Config>::rewire(Node<Config> &new_node, std::vector<Node<Config>*> &neighborhood) {
     double cost = 0, cost_diff = 0;
-    Node<Config> &new_node = this->nodes.back();
 
     for (Node<Config> *neighbor: neighborhood) {
-        cost = this->steer(new_node.config, neighbor->config);
+        auto [path, cost] = this->steer(new_node, *neighbor);
 
         if (new_node.cost + cost < neighbor->cost) {
             new_node.children.push_back(neighbor);
             neighbor->parent = &new_node;
+            neighbor->path = path;
             cost_diff = neighbor->cost - (new_node.cost + cost);
             propagateCostToChildren(*neighbor, cost_diff);
         }
@@ -150,37 +141,6 @@ void RRT_Star<Config>::propagateCostToChildren(Node<Config> &node, double cost_d
         propagateCostToChildren(*child, cost_diff);
     }
 }
-
-
-template <typename Config>
-void RRT_Star<Config>::extendAndRewire(Config &input_config, std::vector<Node<Config>*> &neighborhood) {
-    std::vector<double> cost(neighborhood.size());
-    double min_cost = std::numeric_limits<double>::max();
-    int cheapest_node_idx = 0;
-
-    for (int i=0; i<neighborhood.size(); i++) {
-        cost[i] = this->normalizedDistance(neighborhood[i]->config, input_config);
-
-        if (cost[i] + neighborhood[i]->cost > min_cost) continue;
-
-        min_cost = cost[i] + neighborhood[i]->cost;
-        cheapest_node_idx = i;
-    }
-
-    this->nodes.emplace_back(input_config);
-    this->nodes.back().cost = min_cost;
-    this->nodes.back().parent = neighborhood[cheapest_node_idx];
-    neighborhood[cheapest_node_idx]->children.push_back(&(this->nodes.back()));
-
-    for (int i=0; i<neighborhood.size(); i++) {
-        if (this->nodes.back().cost + cost[i] > neighborhood[i]->cost) continue;
-        neighborhood[i]->cost = this->nodes.back().cost + cost[i];
-        //neighborhood[i]->parent->children remove this child
-        neighborhood[i]->parent = &(this->nodes.back());
-        this->nodes.back().children.push_back(neighborhood[i]);
-    }
-}
-
 //template <typename Config>
 //void RRT_Star::extendNode(Node<Config> &exte)
 // extendNode

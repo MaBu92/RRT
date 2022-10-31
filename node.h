@@ -10,30 +10,27 @@
 
 using ConfigXYYaw = Eigen::Array<double, 3, 1>;
 using ConfigXY = Eigen::Array<double, 2, 1>;
+template <typename Config>
+using Path = std::vector<Config>;
+
 
 template <typename Config>
 class Node {
 public:
     Config config;
     double cost = 0;
-    std::vector<Node<Config>*> children;
+    std::vector<Node<Config>*> children = {};
     Node<Config>* parent = nullptr;
+    Path<Config> path = {};
 
     Node() {};
     Node(Config config_): config(config_) {}
 
-    double getDistance(const Node<Config> &target);
-    double getSquaredDistance(const Node<Config> &target);
     void setParent(Node<Config> &parent);
     void addChild(Node<Config> &child);
     void printConfig();
 };
 
-
-template <typename Config>
-double Node<Config>::getDistance(const Node<Config> &target) {
-    return sqrt(this->getSquaredDistance(target));
-}
 
 template <typename Config>
 void Node<Config>::setParent(Node<Config> &parent) {
@@ -48,17 +45,6 @@ void Node<Config>::addChild(Node<Config> &child) {
 template <typename Config>
 void Node<Config>::printConfig() {
     std::cout << "Config: (" << config.transpose() << ")" << std::endl;
-}
-
-template <>
-double Node<ConfigXY>::getSquaredDistance(const Node<ConfigXY> &target) {
-    return (target.config - this->config).pow(2).sum();
-}
-
-template <>
-double Node<ConfigXYYaw>::getSquaredDistance(const Node<ConfigXYYaw> &target) {
-    ConfigXYYaw weight(1, 1, 0);
-    return ((target.config - this->config) * weight).pow(2).sum();
 }
 
 

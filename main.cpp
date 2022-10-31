@@ -4,7 +4,7 @@
 #include <chrono>
 
 #include "rrt.h"
-//#include "rrt_star.h"
+#include "rrt_star.h"
 
 const ConfigXY kStart(2, 2);
 const ConfigXY kGoal(18, 18);
@@ -27,7 +27,7 @@ struct Timer {
         end = std::chrono::high_resolution_clock::now();
         duration = end - start;
         float ms = duration.count() * 1000.0f;
-        std::cout << "Execution Time: " << ms << "ms" << std::endl;
+        std::cout << "\nExecution Time: " << ms << "ms" << std::endl;
     }
 };
 
@@ -37,21 +37,30 @@ int main() {
 
     srand(time(NULL));
 
+    int n = 1000;
+
     const ConfigSpace<ConfigXY> config_space(kMin, kMax);
     RRT<ConfigXY> rrt(kStart, kGoal, config_space);
-
-//    RRT<ConfigXY> rrt(kStart, kGoal, config_space);
-//    rrt.run(1);
-//
-//    const ConfigSpace<ConfigXYYaw> config_space2(kMin2, kMax2);
-//    RRT<ConfigXYYaw> rrt2(kStart2, kGoal2, config_space2);
-//    rrt2.run(10);
-//
-//
-//    RRT_Star<ConfigXYYaw> rrt3(kStart2, kGoal2, config_space2);
-//    rrt3.run(1000);
-//    return 0;
+    Path<Node<ConfigXY>> path = rrt.run(n);
+//    for (Node<ConfigXY> &node: path) {
+//        node.printConfig();
+//    }
 
 
 
+    const ConfigSpace<ConfigXYYaw> config_space2(kMin2, kMax2);
+    RRT<ConfigXYYaw> rrt2(kStart2, kGoal2, config_space2);
+    Path<Node<ConfigXYYaw>> path2 = rrt2.run(n);
+//    for (Node<ConfigXYYaw> &node: path2) {
+//        node.printConfig();
+//    }
+
+
+    RRT_Star<ConfigXYYaw> rrt3(kStart2, kGoal2, config_space2);
+    Path<Node<ConfigXYYaw>> path3 = rrt3.run(n);
+
+    double min_cost = sqrt(((kGoal - kStart)).pow(2).sum());
+    std::cout << path.back().cost / min_cost * 100 << std::endl;
+    std::cout << path2.back().cost / min_cost * 100 << std::endl;
+    std::cout << path3.back().cost / min_cost * 100 << std::endl;
 }

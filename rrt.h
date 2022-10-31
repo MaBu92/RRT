@@ -5,81 +5,28 @@
 #include <iostream>
 #include <random>
 #include <functional>
+#include <tuple>
 #include "eigen3/Eigen/Dense"
 
 #include "node.h"
 #include "config_space.h"
 
 
-const int kNumIterations = 1;
 const double kGoalSampleRate = 0.5;
 const double kExtensionStepSize = 0.5;
+const double kPathResolution = 0.05;
+const double kDoubleMax = std::numeric_limits<double>::max();
 
 using ConfigXYYaw = Eigen::Array<double, 3, 1>;
 using ConfigXY = Eigen::Array<double, 2, 1>;
-
-// =====================================================================================================================
-//    CONFIGURATION SPACE TEMPLATE STRUCT
-// =====================================================================================================================
-//template <typename Config>
-//struct ConfigSpace {
-//    Config min;
-//    Config max;
-//
-//    ConfigSpace (double min_x, double max_x, double min_y, double max_y, double min_yaw, double max_yaw)
-//        : min(min_x, min_y, min_yaw), max(max_x, max_y, max_yaw) {}
-//    ConfigSpace (Config min_, Config max_) : min(min_), max(max_) {}
-//};
-
-
-// =====================================================================================================================
-//    NODE TEMPLATE STRUCT
-// =====================================================================================================================
-//template <typename Config>
-//struct Node {
-//    double cost = 0;
-//    std::vector<Node<Config>*> children;
-//    Node* parent = nullptr;
-//
-//    Node(Config config_)
-//        : config(config_) {
-//        children.reserve(5);
-//    }
-//    Config config;
-//
-//    void printConfig() {std::cout << "Config: (" << config.transpose() << ")" << std::endl;}
-//};
-
-
-// =====================================================================================================================
-//    EUKLIDEAN DISTANCE 2D
-// =====================================================================================================================
 template <typename Config>
-double euklideanDistance2D(const Config &config1, const Config &config2) {
-    Config unit_config_2d = Config::Zero();
-    unit_config_2d[0] = 1;
-    unit_config_2d[1] = 1;
-    return sqrt(((config2 - config1) * unit_config_2d).pow(2).sum());
-}
-
-template <>
-double euklideanDistance2D(const ConfigXY &config1, const ConfigXY &config2) {
-    return sqrt(((config2 - config1)).pow(2).sum());
-}
-
-
+using Path = std::vector<Config>;
 template <typename Config>
-double squaredEuklideanDistance2D(const Config &config1, const Config &config2) {
-    Config unit_config_2d = Config::Zero();
-    unit_config_2d[0] = 1;
-    unit_config_2d[1] = 1;
-    return ((config2 - config1) * unit_config_2d).pow(2).sum();
-}
+using DistanceFunction = std::function<double(const Node<Config>&, const Node<Config>&)>;
+template <typename Config>
+using SteeringFunction = std::function<std::tuple<Path<Config>, double> (Node<Config>&, Node<Config>&, double stepsize)>;
 
-template <>
-double squaredEuklideanDistance2D(const ConfigXY &config1, const ConfigXY &config2) {
-    return (config2 - config1).pow(2).sum();
-}
+
 
 // =====================================================================================================================
 //    RRT TEMPLATE CLASS
@@ -91,30 +38,38 @@ public:
 
     RRT(Config start_config, Config goal_config, ConfigSpace<Config> config_space_)
         : start_node(start_config), goal_node(goal_config), config_space(config_space_) {}
-    void run(int=1);
+    std::vector<Node<Config>> run(int=1);
     void printNodes() {
         for (Node<Config> &node: nodes) node.printConfig();
     }
 
 protected:
-    Config start_node, goal_node;
+    Node<Config> start_node, goal_node;
     ConfigSpace<Config> config_space;
     std::vector<Node<Config>> nodes;
 
+    // Tree Methods
     Node<Config> sampleNode();
     Node<Config>& getNearestNode(Node<Config> &input_node);
-    Node<Config> getIntermediateNode(Node<Config> &start, Node<Config> &goal, double stepsize);
-    void extendNode(Node<Config> to_extend, Node<Config> extend_with);
-    double steer(Config &start_config, Config &goal_config);
+    Node<Config>& extendNode(Node<Config> &start, Node<Config> &goal, double stepsize=kDoubleMax);
+    std::vector<Node<Config>> getFinalPath(Node<Config> &current_node);
+
+    // Distance Methods
+    static double getDistance(const Node<Config> &start, const Node<Config> &goal);
+    static double getSquaredDistance(const Node<Config> &start, const Node<Config> &goal);
+
+    // Steering Method
+    static std::tuple<Path<Config>, double> steer(Node<Config> &start, Node<Config> &goal,
+                                                  double stepsize=kDoubleMax, bool calculate_path=true);
 };
 
 
-// =====================================================================================================================
-//    RRT TEMPLATE CLASS - DEFINITIONS
-// =====================================================================================================================
 
+// =====================================================================================================================
+//    RRT TEMPLATE CLASS - METHODS
+// =====================================================================================================================
 template <typename Config>
-void RRT<Config>::run(int n_iterations) {
+std::vector<Node<Config>> RRT<Config>::run(int n_iterations) {
     /*
      * arguments:
      *      - n_iterations: Number of iterations/nodes with which the tree is expanded.
@@ -124,8 +79,6 @@ void RRT<Config>::run(int n_iterations) {
      * taking a step from the nearest node into the direction of the sampled node
      * ...
      */
-
-    Config new_config;
 
     // reserve memory for the tree nodes saved in nodes and add start as first node
     nodes.reserve(n_iterations + 1);
@@ -138,14 +91,21 @@ void RRT<Config>::run(int n_iterations) {
         // get a reference to the closest node in the tree with respect to the sample node
         Node<Config> &nearest_node = getNearestNode(sample_node);
 
-        // make a step from nearest_node towards sampled node with a limited step size ans save the resulting
-        // configuration in new_config
-        Node<Config> new_node = getIntermediateNode(nearest_node, sample_node, kExtensionStepSize);
-
+        // extend nearest_node towards sample node with a limiting step size -> new_node
+        // calculate path and cost of extension for new_node
         // save new_node in nodes. update parent and children of new_node and nearest_node
-        extendNode(nearest_node, new_node);
+        extendNode(nearest_node, sample_node, kExtensionStepSize);
+
+        if (getDistance(nodes.back(), goal_node) <= kExtensionStepSize) {
+            extendNode(nodes.back(), goal_node);
+            std::cout << "Found path with minimal cost of " << nodes.back().cost << " after " << i << " iterations." << std::endl;
+            return getFinalPath(nodes.back());
+        }
     }
+    std::cout << "No path found" << std::endl;
+    return std::vector<Node<Config>>();
 }
+
 
 template <typename Config>
 Node<Config> RRT<Config>::sampleNode() {
@@ -159,6 +119,7 @@ Node<Config> RRT<Config>::sampleNode() {
     return Node<Config>(config_space.getRandomConfig());
 }
 
+
 template <typename Config>
 Node<Config>& RRT<Config>::getNearestNode(Node<Config> &input_node) {
     double distance=0, min_distance=std::numeric_limits<double>::max();
@@ -166,7 +127,7 @@ Node<Config>& RRT<Config>::getNearestNode(Node<Config> &input_node) {
 
     // find nearest node in nodes
     for (Node<Config> &node: nodes) {
-        distance = distanceFunction(input_node.config, node.config);
+        distance = getDistance(input_node, node);
         if (distance < min_distance) {
             min_distance = distance;
             nearest_node = &node;
@@ -175,32 +136,84 @@ Node<Config>& RRT<Config>::getNearestNode(Node<Config> &input_node) {
     return *nearest_node;
 }
 
-template <typename Config>
-Node<Config> RRT<Config>::getIntermediateNode(Node<Config> &start, Node<Config> &goal, double stepsize) {
-    Config direction = (goal.config - start.config);
-    double magnitude = start.getDistance(goal);
-
-    double step_factor = std::min(1., stepsize / magnitude);
-
-    Config new_config = direction * step_factor + start.config;
-    return Node<Config>(new_config);
-};
-
 
 template <typename Config>
-void RRT<Config>::extendNode(Node<Config> to_extend, Node<Config> extend_with) {
-    extend_with.setParent(to_extend);
-    nodes.push_back(extend_with);
-    to_extend.addChild(nodes.back());
+Node<Config>& RRT<Config>::extendNode(Node<Config> &start, Node<Config> &goal, double stepsize) {
+    auto [path, cost] = steer(start, goal, stepsize);
+    Config new_config = path.back();
+    Node<Config> new_node(new_config);
+    new_node.path = path;
+    new_node.cost = cost + start.cost;
+    new_node.setParent(start);
+    nodes.push_back(new_node);
+    start.addChild(nodes.back());
+    return nodes.back();
 }
 
-//template <typename Config>
-//double RRT<Config>::steer(Config &start_config, Config &goal_config) {
-//    double cost;
-//
-//    cost = this->normalizedDistance(start_config, goal_config);
-//    return cost;
-//}
+
+template <typename Config>
+std::vector<Node<Config>> RRT<Config>::getFinalPath(Node<Config> &current_node) {
+    std::vector<Node<Config>> final_path = {current_node};
+
+    while (current_node.parent) {
+        current_node = *current_node.parent;
+        final_path.push_back(current_node);
+    }
+
+    std::reverse(final_path.begin(), final_path.end());
+    return final_path;
+}
+
+
+// ------ DISTANCE METHOD ----------------------------------------------------------------------------------------------
+template <typename Config>
+double RRT<Config>::getDistance(const Node<Config> &start, const Node<Config> &goal) {
+    return sqrt(getSquaredDistance(start, goal));
+}
+
+
+template <typename Config>
+double RRT<Config>::getSquaredDistance(const Node<Config> &start, const Node<Config> &goal) {
+    return (goal.config - start.config).pow(2).sum();
+}
+
+
+template <>
+double RRT<ConfigXYYaw>::getSquaredDistance(const Node<ConfigXYYaw> &start, const Node<ConfigXYYaw> &goal) {
+    ConfigXYYaw weight(1, 1, 0);
+    return ((goal.config - start.config) * weight).pow(2).sum();
+}
+
+
+// ------ STEERING METHOD ----------------------------------------------------------------------------------------------
+template <typename Config>
+std::tuple<Path<Config>, double> RRT<Config>::steer(Node<Config> &start, Node<Config> &goal,
+                                                    double stepsize, bool calculate_path) {
+    double magnitude = getDistance(start, goal);
+    Config direction = (goal.config - start.config) / magnitude;
+
+    stepsize = std::min(magnitude, stepsize);
+
+    Path<Config> path;
+    path.reserve(std::ceil(stepsize / kPathResolution));
+    path.push_back(start.config);
+    Config new_config = magnitude<=stepsize ? goal.config : start.config + direction * stepsize;
+
+    if (!calculate_path) {
+        path.push_back(new_config);
+        return {path, stepsize};
+    }
+
+    Config ds = direction * kPathResolution;
+    Config temp_config = start.config;
+    for (double s=kPathResolution; s <= stepsize-kPathResolution; s+=kPathResolution) {
+        temp_config += ds;
+        path.push_back(temp_config);
+    }
+
+    path.push_back(new_config);
+    return {path, stepsize};
+}
 
 #endif
 

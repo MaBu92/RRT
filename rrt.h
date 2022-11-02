@@ -49,7 +49,7 @@ protected:
     std::vector<Node<Config>> nodes;
 
     // Tree Methods
-    Node<Config> sampleNode();
+    Node<Config> sampleNode(double goal_sample_rate);
     Node<Config>& getNearestNode(Node<Config> &input_node);
     Node<Config>& extendNode(Node<Config> &start, Node<Config> &goal, double stepsize=kDoubleMax);
     std::vector<Node<Config>> getFinalPath(Node<Config> &current_node);
@@ -86,7 +86,7 @@ std::vector<Node<Config>> RRT<Config>::run(int n_iterations) {
 
     for (int i=0; i<n_iterations; i++) {
         // sample a configuration randomly from config space or use goal configuration and save it in sampled_config
-        Node<Config> sample_node = sampleNode();
+        Node<Config> sample_node = sampleNode(kGoalSampleRate);
 
         // get a reference to the closest node in the tree with respect to the sample node
         Node<Config> &nearest_node = getNearestNode(sample_node);
@@ -108,12 +108,14 @@ std::vector<Node<Config>> RRT<Config>::run(int n_iterations) {
 
 
 template <typename Config>
-Node<Config> RRT<Config>::sampleNode() {
+Node<Config> RRT<Config>::sampleNode(double goal_sample_rate) {
     // get a random value between 0 and 1
     double random_double = (double) rand() / RAND_MAX;
 
     // return goal sample with probability kGoalSample
-    if (kGoalSampleRate > random_double) return goal_node;
+    if (goal_sample_rate > random_double) return goal_node;
+
+    Node<Config>(config_space.getRandomConfig());
 
     // return a random config within config space
     return Node<Config>(config_space.getRandomConfig());

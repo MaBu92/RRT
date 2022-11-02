@@ -23,7 +23,7 @@ public:
 private:
     void getNeighborhood(Node<Config> &input_node, std::vector<Node<Config> *> &neighborhood);
 
-    void extendAndRewire(Config &input_config, std::vector<Node<Config> *> &neighborhood);
+    //void extendAndRewire(Config &input_config, std::vector<Node<Config> *> &neighborhood);
 
     void extendFromCheapestNeighbor(std::vector<Node<Config>*> &neighborhood, Node<Config> &input_node);
 
@@ -40,15 +40,19 @@ std::vector<Node<Config>> RRT_Star<Config>::run(int n_iterations) {
     // reserve memory for the tree nodes saved in nodes and add start as first node
     this->nodes.reserve(n_iterations + 1);
     this->nodes.push_back(this->start_node);
-    this->nodes.push_back(this->goal_node);
+
+    //std::vector<Node<Config>*> neighborhood;
     std::vector<Node<Config>*> neighborhood;
+    double goal_sample_rate = kGoalSampleRate;
+    int goal_node_index = -1;
 
     for (int i=0; i<n_iterations; i++) {
-        neighborhood = {};
+        std::cout << i << std::endl;
+        neighborhood.clear();
 
-        //std::cout << "Iteration: " << i << std::endl;
         // sample random configuration or goal_config node
-        Node<Config> sample_node = this->sampleNode();
+        Node<Config> sample_node = this->sampleNode(goal_sample_rate);
+
 
         // get a reference of the nearest node in nodes in regard to the sampled config
         Node<Config> &nearest_node = this->getNearestNode(sample_node);
@@ -59,10 +63,15 @@ std::vector<Node<Config>> RRT_Star<Config>::run(int n_iterations) {
         auto [path, cost] = this->steer(nearest_node, sample_node, kExtensionStepSize, false);
         Node<Config> new_node(path.back());
 
-        if (this->getDistance(new_node, this->goal_node) <= kExtensionStepSize) continue;
+        // As long goal is not connected
+        if (goal_sample_rate && this->getDistance(new_node, this->goal_node) <= kExtensionStepSize) {
+            std::cout << "found goal in " << i << " iterations" << std::endl;
+            new_node = this->goal_node;
+            goal_node_index = i + 1;
+            goal_sample_rate = 0;
+        }
 
         // get vector of pointers to the nearest neighbor nodes
-        std::vector<Node<Config>*> neighborhood;
         getNeighborhood(new_node, neighborhood);
         assert(!neighborhood.empty());
 
@@ -77,9 +86,16 @@ std::vector<Node<Config>> RRT_Star<Config>::run(int n_iterations) {
         //          update neighbor cost
         //          add cost_difference to children (and propagate diff to their children)
         //          if neighbor + cost of connection to old parent < parent cost: do it again
+
+        if (i==648) {
+            for (int j=0; j<this->nodes.size(); j++) {
+                this->nodes[j].id = j;
+            }
+        }
         rewire(this->nodes.back(), neighborhood);
     }
-    return this->getFinalPath(this->nodes[1]);
+
+    return this->getFinalPath(this->nodes[goal_node_index]);
 }
 
 
@@ -109,10 +125,11 @@ void RRT_Star<Config>::extendFromCheapestNeighbor(std::vector<Node<Config>*> &ne
     }
 
     auto [path, cost] = this->steer(*cheapest_neighbor, input_node);
-    input_node.parent = cheapest_neighbor;
-    input_node.cost = cheapest_neighbor->cost + min_cost;
-    input_node.path = path;
-    cheapest_neighbor->children.push_back(&input_node);
+    this->nodes.push_back(input_node);
+    this->nodes.back().parent = cheapest_neighbor;
+    this->nodes.back().cost = cheapest_neighbor->cost + min_cost;
+    this->nodes.back().path = path;
+    cheapest_neighbor->children.push_back(&this->nodes.back());
 }
 
 
@@ -127,7 +144,7 @@ void RRT_Star<Config>::rewire(Node<Config> &new_node, std::vector<Node<Config>*>
             new_node.children.push_back(neighbor);
             neighbor->parent = &new_node;
             neighbor->path = path;
-            cost_diff = neighbor->cost - (new_node.cost + cost);
+            cost_diff = new_node.cost + cost - neighbor->cost;
             propagateCostToChildren(*neighbor, cost_diff);
         }
     }
@@ -136,9 +153,18 @@ void RRT_Star<Config>::rewire(Node<Config> &new_node, std::vector<Node<Config>*>
 
 template <typename Config>
 void RRT_Star<Config>::propagateCostToChildren(Node<Config> &node, double cost_diff) {
+    std::cout << "id: " << node.id << std::endl;
+//    node.printConfig();
+//    std::cout << node.x << std::endl;
+    if (node.id == 159) {
+        std::cout << "aha" << std::endl;
+    }
     for (Node<Config> *child: node.children) {
+//        std::cout << 1 << std::endl;
         child->cost += cost_diff;
+//        std::cout << 2 << std::endl;
         propagateCostToChildren(*child, cost_diff);
+//        std::cout << "out";
     }
 }
 //template <typename Config>

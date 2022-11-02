@@ -35,13 +35,13 @@ struct Timer {
 int main() {
     Timer timer;
 
-    srand(time(NULL));
+    srand(3);
 
     int n = 1000;
 
-    const ConfigSpace<ConfigXY> config_space(kMin, kMax);
-    RRT<ConfigXY> rrt(kStart, kGoal, config_space);
-    Path<Node<ConfigXY>> path = rrt.run(n);
+//    const ConfigSpace<ConfigXY> config_space(kMin, kMax);
+//    RRT<ConfigXY> rrt(kStart, kGoal, config_space);
+//    Path<Node<ConfigXY>> path = rrt.run(n);
 //    for (Node<ConfigXY> &node: path) {
 //        node.printConfig();
 //    }
@@ -58,9 +58,13 @@ int main() {
 
     RRT_Star<ConfigXYYaw> rrt3(kStart2, kGoal2, config_space2);
     Path<Node<ConfigXYYaw>> path3 = rrt3.run(n);
+//    for (Node<ConfigXYYaw> &node: path3) {
+//        node.printConfig();
+//    }
 
-    double min_cost = sqrt(((kGoal - kStart)).pow(2).sum());
-    std::cout << path.back().cost / min_cost * 100 << std::endl;
+    Eigen::Array<double, 3, 1> weight(1, 1, 0);
+    double min_cost = sqrt(((kGoal2 - kStart2)*weight).pow(2).sum());
+//    std::cout << path.back().cost / min_cost * 100 << std::endl;
     std::cout << path2.back().cost / min_cost * 100 << std::endl;
     std::cout << path3.back().cost / min_cost * 100 << std::endl;
 }

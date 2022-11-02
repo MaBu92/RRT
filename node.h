@@ -18,13 +18,15 @@ template <typename Config>
 class Node {
 public:
     Config config;
+    double x, y, z;
+    int id;
     double cost = 0;
     std::vector<Node<Config>*> children = {};
     Node<Config>* parent = nullptr;
     Path<Config> path = {};
 
     Node() {};
-    Node(Config config_): config(config_) {}
+    Node(Config config_): config(config_), x(config_[0]), y(config[1]), z(config[2]) {}
 
     void setParent(Node<Config> &parent);
     void addChild(Node<Config> &child);

@@ -98,7 +98,7 @@ std::vector<Node<Config>> RRT<Config>::run(int n_iterations) {
 
         if (getDistance(nodes.back(), goal_node) <= kExtensionStepSize) {
             extendNode(nodes.back(), goal_node);
-            std::cout << "Found path with minimal cost of " << nodes.back().cost << " after " << i << " iterations." << std::endl;
+            std::cout << "Found path with minimal cost of " << nodes.back().getCost() << " after " << i << " iterations." << std::endl;
             return getFinalPath(nodes.back());
         }
     }
@@ -142,13 +142,9 @@ Node<Config>& RRT<Config>::getNearestNode(Node<Config> &input_node) {
 template <typename Config>
 Node<Config>& RRT<Config>::extendNode(Node<Config> &start, Node<Config> &goal, double stepsize) {
     auto [path, cost] = steer(start, goal, stepsize);
-    Config new_config = path.back();
-    Node<Config> new_node(new_config);
-    new_node.path = path;
-    new_node.cost = cost + start.cost;
-    new_node.setParent(start);
-    nodes.push_back(new_node);
-    start.addChild(nodes.back());
+    nodes.emplace_back(path.back());
+    start.connectToChild(nodes.back(), path, cost);
+
     return nodes.back();
 }
 
@@ -157,8 +153,8 @@ template <typename Config>
 std::vector<Node<Config>> RRT<Config>::getFinalPath(Node<Config> &current_node) {
     std::vector<Node<Config>> final_path = {current_node};
 
-    while (current_node.parent) {
-        current_node = *current_node.parent;
+    while (current_node.getParent()) {
+        current_node = *current_node.getParent();
         final_path.push_back(current_node);
     }
 

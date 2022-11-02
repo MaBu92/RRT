@@ -65,6 +65,6 @@ int main() {
     Eigen::Array<double, 3, 1> weight(1, 1, 0);
     double min_cost = sqrt(((kGoal2 - kStart2)*weight).pow(2).sum());
 //    std::cout << path.back().cost / min_cost * 100 << std::endl;
-    std::cout << path2.back().cost / min_cost * 100 << std::endl;
-    std::cout << path3.back().cost / min_cost * 100 << std::endl;
+    std::cout << path2.back().getCost() / min_cost * 100 << std::endl;
+    std::cout << path3.back().getCost() / min_cost * 100 << std::endl;
 }

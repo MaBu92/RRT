@@ -39,6 +39,7 @@ public:
     RRT(Config start_config, Config goal_config, ConfigSpace<Config> config_space_)
         : start_node(start_config), goal_node(goal_config), config_space(config_space_) {}
     std::vector<Node<Config>> run(int=1);
+    std::vector<Node<Config>> nodes;
     void printNodes() {
         for (Node<Config> &node: nodes) node.printConfig();
     }
@@ -46,7 +47,6 @@ public:
 protected:
     Node<Config> start_node, goal_node;
     ConfigSpace<Config> config_space;
-    std::vector<Node<Config>> nodes;
 
     // Tree Methods
     Node<Config> sampleNode(double goal_sample_rate);
@@ -153,8 +153,8 @@ template <typename Config>
 std::vector<Node<Config>> RRT<Config>::getFinalPath(Node<Config> &current_node) {
     std::vector<Node<Config>> final_path = {current_node};
 
-    while (current_node.getParent()) {
-        current_node = *current_node.getParent();
+    while (current_node.hasParent()) {
+        current_node = current_node.getParent();
         final_path.push_back(current_node);
     }
 
@@ -172,14 +172,14 @@ double RRT<Config>::getDistance(const Node<Config> &start, const Node<Config> &g
 
 template <typename Config>
 double RRT<Config>::getSquaredDistance(const Node<Config> &start, const Node<Config> &goal) {
-    return (goal.config - start.config).pow(2).sum();
+    return (goal.getConfig() - start.getConfig()).pow(2).sum();
 }
 
 
 template <>
 double RRT<ConfigXYYaw>::getSquaredDistance(const Node<ConfigXYYaw> &start, const Node<ConfigXYYaw> &goal) {
     ConfigXYYaw weight(1, 1, 0);
-    return ((goal.config - start.config) * weight).pow(2).sum();
+    return ((goal.getConfig() - start.getConfig()) * weight).pow(2).sum();
 }
 
 
@@ -188,14 +188,14 @@ template <typename Config>
 std::tuple<Path<Config>, double> RRT<Config>::steer(Node<Config> &start, Node<Config> &goal,
                                                     double stepsize, bool calculate_path) {
     double magnitude = getDistance(start, goal);
-    Config direction = (goal.config - start.config) / magnitude;
+    Config direction = (goal.getConfig() - start.getConfig()) / magnitude;
 
     stepsize = std::min(magnitude, stepsize);
 
     Path<Config> path;
     path.reserve(std::ceil(stepsize / kPathResolution));
-    path.push_back(start.config);
-    Config new_config = magnitude<=stepsize ? goal.config : start.config + direction * stepsize;
+    path.push_back(start.getConfig());
+    Config new_config = magnitude<=stepsize ? goal.getConfig() : start.getConfig() + direction * stepsize;
 
     if (!calculate_path) {
         path.push_back(new_config);
@@ -203,7 +203,7 @@ std::tuple<Path<Config>, double> RRT<Config>::steer(Node<Config> &start, Node<Co
     }
 
     Config ds = direction * kPathResolution;
-    Config temp_config = start.config;
+    Config temp_config = start.getConfig();
     for (double s=kPathResolution; s <= stepsize-kPathResolution; s+=kPathResolution) {
         temp_config += ds;
         path.push_back(temp_config);
